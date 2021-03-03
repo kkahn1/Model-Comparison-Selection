@@ -1,0 +1,151 @@
+---
+title: "Model Comparison and Selection "
+author: "Nathan Morse"
+date: "3/2/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=TRUE, warning=FALSE, message=FALSE)
+
+# Packages
+library(haven)
+library(tidyverse)
+library(mlr)
+library(parallelMap)
+library(parallel)
+
+```
+
+### Loading data
+
+For this tutorial, we are using county-level data to predict whether a county voted for Trump in 2020 based on COVID-19 infection rates and demographic controls. The dataset includes:
+
+-   **fips:** 5-digit county code
+-   **trump:** indicates whether Trump received at least 50% of the votes (1) or not (0) ([McGovern](https://github.com/tonmcg/US_County_Level_Election_Results_08-20))
+-   **covid:** infection rate (%) as of election day, 2020-11-03 ([New York Times](https://github.com/nytimes/covid-19-data/blob/master/README.md))
+-   **pop:** county population ([Killeen et al. (2020)](https://arxiv.org/pdf/2004.00756.pdf))
+-   **urban:** indicates whether county is metro (1) or non-metro (0) ([Killeen et al. (2020)](https://arxiv.org/pdf/2004.00756.pdf))
+-   **poverty:** poverty rate (%) ([Killeen et al. (2020)](https://arxiv.org/pdf/2004.00756.pdf))
+-   **seniors:** population age 65 and older (%) ([Killeen et al. (2020)](https://arxiv.org/pdf/2004.00756.pdf))
+-   **income:** median household income (\$) ([Killeen et al. (2020)](https://arxiv.org/pdf/2004.00756.pdf))
+
+To begin, we load the data and split it into a training set and test set, indexed using a partitioning function in the package `caret`.
+
+```{r}
+
+# Load data
+counties = read.csv("counties.csv")
+
+# Split dataset
+set.seed(1000)
+x = caret::createDataPartition(counties$trump, p=.8, list=FALSE, times=1)
+train_set = counties[x,]
+test_set = counties[-x,]
+
+```
+
+### Building models
+
+Next, we use the training data to construct three models: a logistic regression, naive bayes, and support vector machine algorithm. The code for these models is not commented in detail as it has been covered in previous tutorials and in Rhys.
+
+```{r}
+
+# Set up for models
+train_set$trump = as.factor(train_set$trump) # turn into factor
+task = makeClassifTask(data=train_set, target="trump") # set task
+
+# Logistic model (see Rhys for details)
+logit = makeLearner("classif.logreg", predict.type = "prob")
+mod_logit = train(logit, task)  # model object
+pred_logit = predict(mod_logit, newdata=test_set)  # prediction object
+
+# Naive Bayes model (see Rhys for details)
+bayes = makeLearner("classif.naiveBayes")
+mod_bayes = train(bayes, task)  # model object
+pred_bayes = predict(mod_bayes, newdata=test_set)  # prediction object
+
+# Support Vector Machine model (see Rhys for details)
+svm = makeLearner("classif.svm")
+svmParamSpace = makeParamSet(
+  makeDiscreteParam("kernel", values=c("polynomial", "radial", "sigmoid")),
+  makeIntegerParam("degree", lower=1, upper=3),
+  makeNumericParam("cost", lower=0.1, upper=10),
+  makeNumericParam("gamma", lower=0.1, 10))
+randSearch = makeTuneControlRandom(maxit=20)
+cvForTuning = makeResampleDesc("Holdout", split=2/3)
+parallelStartSocket(cpus = detectCores())
+tunedSvmPars = tuneParams("classif.svm", task=task,
+                          resampling=cvForTuning, 
+                          par.set=svmParamSpace,
+                          control=randSearch)
+parallelStop()
+tunedSvm = setHyperPars(makeLearner("classif.svm"),
+                         par.vals=tunedSvmPars$x)
+mod_svm = train(tunedSvm, task)  # model object
+pred_svm = predict(mod_svm, newdata=test_set)  # prediction object
+
+```
+
+### Measuring performance
+
+The `performance` function in `mlr` allows for quick calculations of model performance based on whichever measures the user inputs. See [mlr-org.com](https://mlr.mlr-org.com/articles/tutorial/measures.html) for a full list of measures. Here we use accuracy (acc), balanced accuracy (bac), balanced error rate (ber), false negative rate (fnr), false positive rate (fpr), Cohen's kappa (kappa), Matthews correlation coefficient (mcc), and mean misclassification error (mmce).
+
+```{r}
+
+# Measure accuracy
+acc_logit = performance(pred_logit, acc)
+acc_bayes = performance(pred_bayes, acc)
+acc_svm = performance(pred_svm, acc)
+
+# Other measures of performance
+perf_logit = performance(pred_logit, list(acc, bac, ber, fnr, fpr, kappa, mmce))
+perf_bayes = performance(pred_bayes, list(acc, bac, ber, fnr, fpr, kappa, mmce))
+perf_svm = performance(pred_svm, list(acc, bac, ber, fnr, fpr, kappa, mmce))
+
+# Plot
+data.frame(Criterion = names(perf_logit), logit = perf_logit, 
+           bayes = perf_bayes, svm = perf_svm) %>%
+  pivot_longer(logit:svm, names_to="Model", values_to="Value") %>%
+  ggplot(aes(x=Criterion, y=Value, label=Model, color=Model)) +
+  geom_text() + labs(title="Comparing Measures of Model Performance") +
+  theme_minimal() + theme(legend.position="none")
+
+```
+
+For three of these measures---ACC, BAC, and Kappa---the model with the highest value is the best fitting model. For the other four---BER, FNR, FPR, and MMCE---the model with the lowest value has the best fit. In each of these measures, the SVM model has the best fit. Logistic regression and naive bayes have very similar fit, but logistic regression usually has slightly better fit.
+
+### Validating with bootstrapping
+
+Another way to assess model performance is with resampling methods. Here we use bootstrapping, which is executed similarly to k-fold cross validation in Rhys. This is applied to both the logit and naive bayes models (SVM was omitted because it takes forever to run) using the same measures as before.
+
+```{r}
+
+# Define resampling strategy
+boot = makeResampleDesc(method="Bootstrap", predict="both", iters=5)
+
+# Run bootstrapping on logistic regression
+boot_logit = resample(learner=logit, task=task,
+                      resampling=boot,
+                      measures=list(acc, bac, ber, fnr, fpr, kappa, mmce))
+
+# Run bootstrapping on naive bayes
+boot_bayes = resample(learner=bayes, task=task,
+                      resampling=boot,
+                      measures=list(acc, bac, ber, fnr, fpr, kappa, mmce))
+
+# Plot
+data.frame(Criterion = c("acc", "bac", "ber", "fnr", "fpr", "kappa", "mmce"), 
+           logit = boot_logit$aggr, bayes = boot_bayes$aggr) %>%
+  pivot_longer(logit:bayes, names_to="Model", values_to="Value") %>%
+  ggplot(aes(x=Criterion, y=Value, label=Model, color=Model)) +
+  geom_text() + labs(title="Comparing Measures of Model Performance") +
+  theme_minimal() + theme(legend.position="none")
+
+```
+
+As with before, we want to maximize the ACC, BAC, and Kappa, and we want to minimize the BER, FNR, FPR, and MMCE. The logistic regression and naive bayes models go back and forth, so there is not a clear winner with better fit.
+
+------------------------------------------------------------------------
+
+Nathan Morse, [nam\@psu.edu](mailto:nam@psu.edu){.email}
