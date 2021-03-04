@@ -1,15 +1,4 @@
----
-title: "Model Comparison and Selection "
-author: "Nathan Morse"
-date: "3/2/2021"
-output: 
-  html_document:
-    toc: true
-    toc_float: true
----
-
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo=TRUE, warning=FALSE, message=FALSE)
+#----- MODEL COMPARISON and SELECTION -----#
 
 # Packages
 library(tidyverse)
@@ -17,24 +6,12 @@ library(mlr)
 library(parallelMap)
 library(parallel)
 
-```
 
-### Loading data
+#----- LOADING DATA -----#
 
-For this tutorial, we are using county-level data to predict whether a county voted for Trump in 2020 based on COVID-19 infection rates and demographic controls. The dataset includes:
+# For this tutorial, we are using county-level data to predict whether a county voted for Trump in 2020 based on COVID-19 infection rates and demographic controls. 
 
--   **fips:** 5-digit county code
--   **trump:** indicates whether Trump received at least 50% of the votes (1) or not (0) ([McGovern](https://github.com/tonmcg/US_County_Level_Election_Results_08-20))
--   **covid:** infection rate (%) as of election day, 2020-11-03 ([New York Times](https://github.com/nytimes/covid-19-data/blob/master/README.md))
--   **pop:** county population ([Killeen et al. 2020](https://arxiv.org/pdf/2004.00756.pdf))
--   **urban:** indicates whether county is metro (1) or non-metro (0) ([Killeen et al. 2020](https://arxiv.org/pdf/2004.00756.pdf))
--   **poverty:** poverty rate (%) ([Killeen et al. 2020](https://arxiv.org/pdf/2004.00756.pdf))
--   **seniors:** population age 65 and older (%) ([Killeen et al. 2020](https://arxiv.org/pdf/2004.00756.pdf))
--   **income:** median household income (\$) ([Killeen et al. 2020](https://arxiv.org/pdf/2004.00756.pdf))
-
-To begin, we load the data and split it into a training set and test set, indexed using a partitioning function in the package `caret`.
-
-```{r}
+# To begin, we load the data and split it into a training set and test set, indexed using a partitioning function in the package caret.
 
 # Load data
 counties = read.csv("counties.csv")
@@ -45,13 +22,10 @@ x = caret::createDataPartition(counties$trump, p=.8, list=FALSE, times=1)
 train_set = counties[x,]
 test_set = counties[-x,]
 
-```
 
-### Building models
+#----- BUILDING MODELS -----#
 
-Next, we use the training data to construct three models: a logistic regression, naive bayes, and support vector machine algorithm. The code for these models is not commented in detail as it has been covered in previous tutorials and in Rhys.
-
-```{r}
+# Next, we use the training data to construct three models: a logistic regression, naive bayes, and support vector machine algorithm. The code for these models is not commented in detail as it has been covered in previous tutorials and in Rhys.
 
 # Set up for models
 train_set$trump = as.factor(train_set$trump) # turn into factor
@@ -86,13 +60,10 @@ tunedSvm = setHyperPars(learner_svm, par.vals=tunedSvmPars$x)
 mod_svm = train(tunedSvm, task)  # model object
 pred_svm = predict(mod_svm, newdata=test_set)  # prediction object
 
-```
 
-### Measuring performance
+#----- MEASURING PERFORMANCE-----#
 
-The `performance` function in `mlr` allows for quick calculations of model performance based on whichever measures the user inputs. See [mlr-org.com](https://mlr.mlr-org.com/articles/tutorial/measures.html) for a full list of measures. Here we use accuracy (acc), area under the curve (auc), balanced accuracy (bac), balanced error rate (ber) false negative rate (fnr), false positive rate (fpr), Cohen's kappa (kappa), and mean misclassification error (mmce).
-
-```{r}
+# The performance function in mlr allows for quick calculations of model performance based on whichever measures the user inputs. See mlr-org.com for a full list of measures. Here we use accuracy (acc), area under the curve (auc), balanced accuracy (bac), balanced error rate (ber) false negative rate (fnr), false positive rate (fpr), Cohen's kappa (kappa), and mean misclassification error (mmce).
 
 # Measure accuracy
 performance(pred_logit, acc)
@@ -119,7 +90,7 @@ fit2 = fit %>%
   mutate(best = ifelse(goal=="Maximize",  # determine which model is best fit
                        value==max(value),
                        value==min(value)))
-  
+
 # Plot
 ggplot(fit2, aes(x=value, y=criterion, color=name)) +
   geom_point(aes(alpha=best), size=4) +
@@ -129,17 +100,14 @@ ggplot(fit2, aes(x=value, y=criterion, color=name)) +
   scale_alpha_discrete(range=c(0.4, 1), guide=FALSE) +
   theme(legend.position="bottom")
 
-```
+# For the first four measures—ACC, BAC, G-mean, Kappa—the model with the highest value is the best fitting model. For the other four—AUC, FNR, FPR, and MMCE—the model with the lowest value has the best fit. In all of these measures, the SVM model has the best fit. 
 
-For the first four measures---ACC, BAC, G-mean, Kappa---the model with the highest value is the best fitting model. For the other four---AUC, FNR, FPR, and MMCE---the model with the lowest value has the best fit. In all of these measures, the SVM model has the best fit.
+# Logistic regression is also tied with the SVM for the lowest false positive rate. With most of these measures, a tie may be a red flag of a computational error. However, the false positive rate is mathematically simple, so this tie is plausible.
 
-Logistic regression is also tied with the SVM for the lowest false positive rate. With most of these measures, a tie may be a red flag of a computational error. However, the false positive rate is mathematically simple, so this tie is plausible.
 
-### Validating with bootstrapping
+#----- VALIDATING with BOOTSTRAPPING -----#
 
-Another way to assess model performance is with resampling methods. Here we use bootstrapping, which is executed similarly to k-fold cross validation in Rhys. This is applied to all three models using the same measures as before.
-
-```{r}
+# Another way to assess model performance is with resampling methods. Here we use bootstrapping, which is executed similarly to k-fold cross validation in Rhys. This is applied to all three models using the same measures as before.
 
 # Define resampling strategy
 boot = makeResampleDesc(method="Bootstrap", predict="both", iters=5)
@@ -187,10 +155,7 @@ ggplot(boot_fit2, aes(x=value, y=criterion, color=name)) +
   scale_alpha_discrete(range=c(0.4, 1), guide=FALSE) +
   theme(legend.position="bottom")
 
-```
+# As before, the SVM model outperforms the other models on every measure. This provides strong evidence that SVM algorithms have the best performance for this study. 
 
-As before, the SVM model outperforms the other models on every measure. This provides strong evidence that SVM algorithms have the best performance for this study.
+# Nathan Morse, nam@psu.edu
 
-------------------------------------------------------------------------
-
-Nathan Morse, [nam\@psu.edu](mailto:nam@psu.edu){.email}
