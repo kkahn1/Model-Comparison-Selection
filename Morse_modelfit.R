@@ -63,7 +63,7 @@ pred_svm = predict(mod_svm, newdata=test_set)  # prediction object
 
 #----- MEASURING PERFORMANCE-----#
 
-# The performance function in mlr allows for quick calculations of model performance based on whichever measures the user inputs. See mlr-org.com for a full list of measures. Here we use accuracy (acc), area under the curve (auc), balanced accuracy (bac), balanced error rate (ber) false negative rate (fnr), false positive rate (fpr), Cohen's kappa (kappa), and mean misclassification error (mmce).
+# The performance function in mlr allows for quick calculations of model performance based on whichever measures the user inputs. See mlr-org.com for a full list of measures. Here we use accuracy (acc), area under the curve (auc), balanced accuracy (bac), balanced error rate (ber), false negative rate (fnr), false positive rate (fpr), Cohen's kappa (kappa), and mean misclassification error (mmce).
 
 # Measure accuracy
 performance(pred_logit, acc)
@@ -97,12 +97,11 @@ ggplot(fit2, aes(x=value, y=criterion, color=name)) +
   facet_grid(goal~., scales="free") +
   labs(title="Comparing Measures of Model Performance",
        x="Value", y="Criterion", color="Model") +
+  scale_color_manual(values=c("forestgreen", "tan1", "steelblue")) +
   scale_alpha_discrete(range=c(0.4, 1), guide=FALSE) +
   theme(legend.position="bottom")
 
-# For the first four measures—ACC, BAC, G-mean, Kappa—the model with the highest value is the best fitting model. For the other four—AUC, FNR, FPR, and MMCE—the model with the lowest value has the best fit. In all of these measures, the SVM model has the best fit. 
-
-# Logistic regression is also tied with the SVM for the lowest false positive rate. With most of these measures, a tie may be a red flag of a computational error. However, the false positive rate is mathematically simple, so this tie is plausible.
+# For the first four measures—ACC, AUC, BAC, and Kappa—the model with the highest value is the best fitting model. For the other four—BER, FNR, FPR, and MMCE—the model with the lowest value has the best fit. The logistic regression model has the best fit in four of these measures (AUC, BAC, Kappa, and BER), and it is tied with SVM in two others (ACC and MMCE) and with Bayes in one (FNR). The SVM has the best fit in one (FPR). With some of these measures, a tie may be a red flag of a computational error. However, the measures with ties are mathematically simple, so these ties are plausible. Overall, logistic regression seems to have the best fit, but we cannot be sure yet.
 
 
 #----- VALIDATING with BOOTSTRAPPING -----#
@@ -152,10 +151,11 @@ ggplot(boot_fit2, aes(x=value, y=criterion, color=name)) +
   facet_grid(goal~., scales="free") +
   labs(title="Comparing Measures of Model Performance (Bootstrapping)",
        x="Value", y="Criterion", color="Model") +
+  scale_color_manual(values=c("forestgreen", "tan1", "steelblue")) +
   scale_alpha_discrete(range=c(0.4, 1), guide=FALSE) +
   theme(legend.position="bottom")
 
-# As before, the SVM model outperforms the other models on every measure. This provides strong evidence that SVM algorithms have the best performance for this study. 
+# Unlike before, the SVM model outperforms the other models on every measure. This provides strong evidence that SVM algorithms have the best performance for this study.
 
 # Nathan Morse, nam@psu.edu
 
